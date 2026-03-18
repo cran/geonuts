@@ -27,7 +27,8 @@ plus \code{year}, \code{resolution}. If both single and multi-level columns exis
 levels are present. One of \code{0, 1, 2, 3}. Default: \code{3}.}
 
 \item{country}{(character, optional) Two-letter \code{CNTR_CODE} to filter the
-map polygons (e.g., \code{"DE"}, \code{"FR"}). If \code{NULL}, uses all available regions.}
+map polygons (e.g., \code{"DE"}, \code{"FR"}). If \code{NULL}, uses all available regions.
+When supplied, the map is always zoomed to the full extent of the selected country.}
 
 \item{show_points}{(logical, optional) Overlay input points. Default: \code{TRUE}.}
 

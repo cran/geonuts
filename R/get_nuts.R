@@ -90,8 +90,9 @@ get_nuts <- function(latitude,
 
     shp <- .prefilter_by_bbox(shp, pts)
 
-    # Pass the level into the join helper
-    .join_points_to_nuts(pts, shp, match_strategy, nearest_max_km, level = nuts_level)
+    # Pass the level and resolution into the join helper
+    .join_points_to_nuts(pts, shp, match_strategy, nearest_max_km,
+                         level = nuts_level, resolution = resolution)
   }
 
   if (identical(level, "all")) {
@@ -228,9 +229,10 @@ get_nuts <- function(latitude,
 
 #' Spatial join + optional nearest fallback (robust; km units)
 #' @keywords internal
-#' @importFrom sf st_join st_within st_intersects st_nearest_feature st_distance st_buffer
+#' @importFrom sf st_join st_within st_nearest_feature st_distance
 #' @importFrom units set_units
-.join_points_to_nuts <- function(pts, shp, match_strategy = "within", nearest_max_km = Inf, level = NA_integer_) {
+.join_points_to_nuts <- function(pts, shp, match_strategy = "within", nearest_max_km = Inf,
+                                 level = NA_integer_, resolution = 20L) {
   # 1) Primary join: strict topology
   j <- suppressWarnings(sf::st_join(pts, shp, left = TRUE, join = sf::st_within))
 
@@ -250,19 +252,28 @@ get_nuts <- function(latitude,
     sf::st_join
   }
 
-  # 2) Tiny border buffer pass (fix vertex-touch cases); ~0.0005 deg ~ 55 m
+  # 2) Resolution-adaptive proximity pass for points near/at polygon boundaries.
+  #    Coarser resolutions simplify boundaries more aggressively, so a larger
+  #    proximity threshold is needed to recover valid points that fall just
+  #    outside the simplified polygon.
   border_idx <- which(is.na(out$nuts_id))
-  if (length(border_idx) > 0L) {
-    tiny_buf <- try(suppressWarnings(sf::st_buffer(pts[border_idx, ], dist = 0.0005)), silent = TRUE)
-    if (!inherits(tiny_buf, "try-error")) {
-      jj <- suppressWarnings(sf::st_join(tiny_buf, shp, left = TRUE, join = sf::st_intersects))
-      fillable <- which(is.na(out$nuts_id[border_idx]) & !is.na(jj$NUTS_ID))
-      if (length(fillable) > 0L) {
-        idx <- border_idx[fillable]
-        out$nuts_id[idx]      <- as.character(jj$NUTS_ID[fillable])
-        out$cntr_code[idx]    <- as.character(jj$CNTR_CODE[fillable])
-        out$match_status[idx] <- "matched"
-      }
+  if (length(border_idx) > 0L && nrow(shp) > 0L) {
+    prox_km <- switch(as.character(as.integer(resolution)),
+                      "1"  = 0.5,
+                      "3"  = 1.5,
+                      "10" = 5,
+                      "20" = 10,
+                      "60" = 25,
+                      as.numeric(resolution) * 0.5)
+    near_idx <- sf::st_nearest_feature(pts[border_idx, ], shp)
+    dists    <- sf::st_distance(pts[border_idx, ], shp[near_idx, ], by_element = TRUE)
+    dists_km <- as.numeric(units::set_units(dists, "km", mode = "standard"))
+    within_prox <- dists_km <= prox_km
+    if (any(within_prox)) {
+      fill <- border_idx[within_prox]
+      out$nuts_id[fill]      <- as.character(shp$NUTS_ID[near_idx[within_prox]])
+      out$cntr_code[fill]    <- as.character(shp$CNTR_CODE[near_idx[within_prox]])
+      out$match_status[fill] <- "matched"
     }
   }
 

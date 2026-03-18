@@ -9,7 +9,8 @@
   shp,
   match_strategy = "within",
   nearest_max_km = Inf,
-  level = NA_integer_
+  level = NA_integer_,
+  resolution = 20L
 )
 }
 \description{

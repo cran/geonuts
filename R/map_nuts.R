@@ -12,6 +12,7 @@
 #'   levels are present. One of \code{0, 1, 2, 3}. Default: \code{3}.
 #' @param country (character, optional) Two-letter \code{CNTR_CODE} to filter the
 #'   map polygons (e.g., \code{"DE"}, \code{"FR"}). If \code{NULL}, uses all available regions.
+#'   When supplied, the map is always zoomed to the full extent of the selected country.
 #' @param show_points (logical, optional) Overlay input points. Default: \code{TRUE}.
 #' @param border_col (character, optional) Polygon border colour. Default: \code{"lightgrey"}.
 #' @param low_col (character, optional) Fill colour for lower frequencies. Default: \code{"lightgreen"}.
@@ -53,7 +54,8 @@ map_nuts <- function(nuts,
     if (nrow(shp) == 0L) stop("No polygons found for the requested `country`.", call. = FALSE)
   }
 
-  md <- .build_map_data(shp, st$df, st$nuts_col)
+  md <- .build_map_data(shp, st$df, st$nuts_col,
+                        country_shp = if (!is.null(country)) shp else NULL)
 
   # Build plot
   p <- .render_map(md = md,
@@ -143,7 +145,7 @@ map_nuts <- function(nuts,
 #' Build map data (frequencies, splits, and an auto-zoom extent)
 #' @keywords internal
 #' @importFrom sf st_bbox
-.build_map_data <- function(shp, df, nuts_col) {
+.build_map_data <- function(shp, df, nuts_col, country_shp = NULL) {
   # Frequency per region (exclude NA region ids)
   tab <- table(df[[nuts_col]], useNA = "no")
   freq <- data.frame(geo = names(tab), Frequency = as.numeric(tab), stringsAsFactors = FALSE)
@@ -160,8 +162,11 @@ map_nuts <- function(nuts,
   coords_found <- data.frame(lon = df$lon[found],  lat = df$lat[found])
   coords_na    <- data.frame(lon = df$lon[!found], lat = df$lat[!found])
 
-  # Auto-zoom: focus on matched regions if present; else focus on the points; else use full layer
-  if ("Frequency" %in% names(mapdf) && any(!is.na(mapdf$Frequency) & mapdf$Frequency > 0)) {
+  # Auto-zoom: when a country filter is active, always show the full country extent.
+  # Without a country filter, focus on matched regions if present, then points, then full layer.
+  if (!is.null(country_shp)) {
+    bb <- sf::st_bbox(country_shp)
+  } else if ("Frequency" %in% names(mapdf) && any(!is.na(mapdf$Frequency) & mapdf$Frequency > 0)) {
     bb <- sf::st_bbox(mapdf[!is.na(mapdf$Frequency) & mapdf$Frequency > 0, , drop = FALSE])
   } else if (nrow(df) > 0 && all(c("lon","lat") %in% names(df))) {
     bb <- c(xmin = min(df$lon, na.rm = TRUE), ymin = min(df$lat, na.rm = TRUE),
@@ -201,7 +206,7 @@ map_nuts <- function(nuts,
   base <- ggplot2::ggplot(md$mapdf)
 
   multi_in_region <- any(freq_vals > 1, na.rm = TRUE)
-  max_freq <- max(freq_vals, na.rm = TRUE)
+  max_freq <- if (length(freq_vals) == 0L || all(is.na(freq_vals))) 0L else max(freq_vals, na.rm = TRUE)
 
   if (!is.finite(max_freq) || max_freq < 2) {
     multi_in_region <- FALSE

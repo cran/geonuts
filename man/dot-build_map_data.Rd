@@ -4,7 +4,7 @@
 \alias{.build_map_data}
 \title{Build map data (frequencies, splits, and an auto-zoom extent)}
 \usage{
-.build_map_data(shp, df, nuts_col)
+.build_map_data(shp, df, nuts_col, country_shp = NULL)
 }
 \description{
 Build map data (frequencies, splits, and an auto-zoom extent)
